@@ -1,0 +1,448 @@
+---
+title: "Vaccinated in ICUs - Greece"
+author: "Kostas Voulgaropoulos"
+date: "12/2/2022"
+output: html_document
+---
+
+## Purpose
+
+The great bet with COVID is to avoid 
+* overcrowding of Intensive Care Units (ICUs) and  
+* exhaustion of medical personnel
+
+Most scientists say that our **most powerful weapon** towards that cause is the **vaccine**.
+
+Thankfully for us, the Greek Health Administration started (since August the 30th) publishing the numbers of vaccinated and unvaccinated patients in the country's Intensive Care Units.
+
+We will donwload all available daily reports that contain those figures to investigate who's occupying the ICUs. 
+
+Vaxed, unvaxed or both?
+
+So, after fetching all available data, our dataset looks like:
+
+```{r find data, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+#Libraries#######
+library(tidyverse)
+library(pdftools)
+library(ggthemes)
+library(lubridate)
+
+Sys.setlocale("LC_ALL","English")
+
+
+#Global Variables######
+
+
+#Whether we will download the PDFs containing info
+#TRUE for first run, FALSE if you have already collected and stored wanted data
+for_download <- TRUE
+
+#Whether we will ask for a fraction of the available PDFs
+on_development <- FALSE
+
+#Whether we want to leave plots as PNGs in working directory
+leave_trail <- FALSE
+
+#in case leave_trail is TRUE, the dimensions of the PNGs exported
+wanted_width <- 1300
+wanted_height <- 900
+
+#PDF Links construction#####
+#Create a character vector of the links where the pdfs are
+today <- Sys.Date() 
+
+#30th of August is the first day when numbers of (un)vaccinated patients reported
+first_report <- as.Date.character("2021-08-30")
+
+#Pattern that will return us numbers
+patt_vaxed <- "[\\d\\.\\(%\\)\\.]+ .* ανεμβολίαστοι"
+
+#Where we're gonna store our downloaded data
+saved_data <- "EOPY.RData"
+
+#Download or load from previous runs######
+if(for_download){
+  
+  #Check whether we have data from previous runs
+  data_already_exist <- file.exists(saved_data)
+  
+  #If we have
+  if(data_already_exist){
+    
+    #Load the saved dataframe
+    load(saved_data)
+    
+    #Store it to a differently named dataframe
+    already_downloaded_data <- tem_df
+    
+    last_date_of_downloaded_data <- already_downloaded_data$Day %>% max() 
+    
+  }
+
+  #All days between first day of report and today
+  dates_wanted <- 
+    #If it's run later than 15:00, include current day
+    if(lubridate::hour(Sys.time()) > 15){
+      
+      seq.Date(from = first_report, to = today, by = 1)
+      
+    }else{
+      seq.Date(from = first_report, to = today-1, by = 1)
+      }
+
+  if(data_already_exist){
+    
+    dates_wanted <- dates_wanted[dates_wanted > last_date_of_downloaded_data]
+    
+  }
+
+  if(on_development){
+    
+    #Pick some random dates to minimize the iterations
+    dates_wanted <- dates_wanted[sort(sample(x = 1:length(dates_wanted), size = 3, replace = FALSE))]
+    
+  }
+
+  #In the form that each date appears in each link
+  days_wanted <- 
+    dates_wanted %>% 
+    lubridate::month() %>% 
+    as.character() %>% 
+    str_pad(2,"left","0") %>%
+    paste0(dates_wanted %>% lubridate::day() %>% as.character() %>% str_pad(2,"left","0"))
+  
+  #for some reason, 22/09 is represented as 09222 in its link
+  days_wanted[days_wanted == "0922"] <- "09222" 
+  
+  #Finally create links
+  links <- paste0("https://eody.gov.gr/wp-content/uploads/", 
+                  lubridate::year(dates_wanted) ,
+                  "/",
+                  substr(days_wanted,1,2),
+                  "/covid-gr-daily-report-", 
+                  lubridate::year(dates_wanted),
+                  days_wanted,
+                  ".pdf")  
+
+
+  
+  
+  
+  #initiate a dataframe
+  tem_df <- data.frame()
+  
+  #To Store unsuccessful attempts
+  not_existing_links <- character()
+  unsuccessful_links <- character()
+  
+  r <- 1
+  for(j in 1:length(links)){
+    
+    print(paste("Day", dates_wanted[j]))
+    
+    link <- links[j]
+    
+    data <- tryCatch(pdftools::pdf_text(link), error = function(e) e)
+    
+    #If for some reasong pdf data does not get downlaoded
+    if(any(class(data) == "error")){
+      
+      #append the vector where we store them
+      not_existing_links <- c( not_existing_links, link)
+      #And on to the next link
+      next
+      
+    }
+    
+    #Locate where our pattern exists
+    where_wanted_text <- data %>% sapply(str_locate,patt_vaxed,USE.NAMES = FALSE)
+    
+    #Specify the page
+    which_page <- which(!is.na(where_wanted_text[1,]))
+    
+    
+    if(identical(which_page,integer(0))){
+      
+      print(paste("No data found for ", link))
+      
+      #Store it to examine it later
+      unsuccessful_links <- c(unsuccessful_links, link)
+      
+      next
+      
+    }else{
+      
+      tem_df[r,"File"] <- days_wanted[r]
+      
+      tem_df[r,"Day"] <- dates_wanted[r]
+      
+      lower_border <- where_wanted_text[,which_page][1] 
+      
+      upper_border <- where_wanted_text[,which_page][2]
+      
+      tem <- data[which_page] %>% 
+        substr(lower_border-90, upper_border+90) %>% 
+        str_extract_all("\\d{2,} \\(\\d[\\d\\.]+%\\)")
+      
+      tem_df[r,"Unvaccinated"] <- tem[[1]][1]  
+      
+      tem_df[r,"Vaccinated"] <- tem[[1]][2]  
+      
+      tem_df[r,"link"] <- link
+      
+      r <- r+1
+      
+    }
+    
+  }
+  
+  
+  
+  #Bind with data from previous session(s)
+  if(data_already_exist){tem_df <- rbind( already_downloaded_data,tem_df) }
+  
+  #And save for next sessions
+  save(tem_df, file = saved_data)
+  
+  
+}else{
+  
+  load(saved_data)
+
+}
+
+
+#Tidy up Data############
+#Separate absolute numbers from percentages
+for(col in c("Unvaccinated", "Vaccinated")){
+  
+  tem_df <- 
+    tem_df %>% separate( col = col, into = c(col,paste0(col,"_perc")), sep = "\\s" ) #%>% pull(col)
+  
+}
+
+#Clean Percentages
+for(col in paste0(c("Unvaccinated", "Vaccinated"),"_perc")){
+  
+  tem_df[,col] <-
+    tem_df[,col] %>% str_extract("\\d+\\.\\d+") %>% as.numeric()
+
+}
+
+
+tem_df %>% head()
+
+
+```
+
+
+## Absolute Numbers & Percentages
+
+Now that we have fetched and cleaned our data, we can plot:
+
+
+```{r absolute numbers, echo=FALSE}
+
+
+unvaccinated_color <- "#a78ccf" #"#ed8282" #"#e07e7e"
+vaccinated_color <- "#69c28b"
+
+
+
+if(FALSE){
+  png(filename="Absolute_Numbers_in_ICUs.png", 
+      width=wanted_width, 
+      height=wanted_height)
+}
+
+
+
+in_long_format <- 
+  
+  tem_df %>% 
+  
+  pivot_longer(cols = c("Unvaccinated", "Vaccinated")) %>% 
+  
+  mutate(value = as.integer(value), FillColor = ifelse(name == "Unvaccinated", unvaccinated_color , vaccinated_color ) ) 
+    
+
+maximum_number_of_vaccinated <- 
+  
+  in_long_format %>% filter(name=="Vaccinated") %>%
+  
+  pull(value) %>% max()
+
+
+day_of_maximum_number_of_vaccinated <- 
+  
+  in_long_format %>% filter(value==maximum_number_of_vaccinated) %>%
+  
+  pull(Day) 
+
+
+absolutes_plot <- in_long_format %>% 
+  
+  ggplot(aes(x = Day, y = value, fill = name )) +
+  
+  geom_col(position = "stack",width = .5) + 
+  
+  scale_fill_manual(values = in_long_format$FillColor) +
+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  
+  scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%d %b %y") +
+  
+  scale_y_continuous(breaks = sort(c(maximum_number_of_vaccinated,seq(100, 800, 100)) )) +
+  
+  geom_hline(yintercept = maximum_number_of_vaccinated, color = "red") +
+
+  theme_fivethirtyeight() + 
+  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1) , legend.title = element_blank() ) +
+  
+  theme(legend.position = "none") + 
+          
+  labs(title = "Number of COVID Patients", subtitle =  "In Intensive Care Units in Greece", y = "Number of Patients", x = "") + 
+  
+  geom_label(x = day_of_maximum_number_of_vaccinated, 
+             
+             y = maximum_number_of_vaccinated+60, 
+             
+             label = maximum_number_of_vaccinated)
+
+  
+  #scale_fill_discrete(name = "",type = c("#f24b3f", "#4c92f5") ) 
+
+
+if(FALSE){dev.off()}
+
+
+#
+
+#```{r relative numbers }
+
+#And one with percentages
+
+if(leave_trail){
+  png(filename="Percentages_in_ICUs.png", 
+      width=wanted_width, 
+      height=wanted_height)
+}
+
+daily_numbers <- in_long_format %>% group_by(Day) %>% summarize(Daily_Total = sum(value))
+
+
+percentages_df <- 
+  
+  in_long_format %>% 
+  
+  left_join(daily_numbers, by = "Day") %>% 
+  
+  mutate( Percentage = value / Daily_Total ) 
+
+
+maximum_percentage_of_vaccinated <- 
+  
+  percentages_df %>%
+  
+  filter(name == "Vaccinated") %>%
+  
+  pull(Percentage) %>% max()
+  
+day_of_maximum_percentage <- 
+  
+  percentages_df %>% 
+  
+  filter(Percentage == maximum_percentage_of_vaccinated) %>%
+  
+  pull(Day)
+
+maximum_percentage_of_vaccinated <- round(maximum_percentage_of_vaccinated*100)
+
+
+percentage_breaks <- seq(0,100,25)
+
+percentage_breaks <- sort(c(percentage_breaks))
+
+
+percentages_plot <- 
+  
+  percentages_df %>%
+  
+  ggplot(aes(x = Day, y = Percentage*100, fill = name )) +
+  
+  geom_col(position = "stack",width = .5) + 
+  
+  scale_fill_manual(values = c(unvaccinated_color , vaccinated_color) ) +
+
+  #theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+
+  geom_hline(yintercept = maximum_percentage_of_vaccinated, color = "red") +
+  
+  #scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%d %b %y") +
+  
+  theme_fivethirtyeight() + 
+    
+  theme(axis.text.x = element_blank(), 
+        legend.title = element_blank(),
+        legend.text = element_text(size=20)) +
+  
+  
+  
+  scale_y_continuous( breaks = percentage_breaks ,labels = paste0(percentage_breaks,"%") ) +
+  
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1) , legend.title = element_blank() ) +
+          
+  labs(title = "Percentages of COVID Patients", subtitle = "In Intensive Care Units in Greece", y = "%", x = "") + 
+  
+  geom_label(x = day_of_maximum_percentage, 
+             
+             y = maximum_percentage_of_vaccinated+10, 
+             
+             label = paste0(maximum_percentage_of_vaccinated,"%"), show.legend = FALSE )
+
+
+gridExtra::grid.arrange( percentages_plot , absolutes_plot)
+
+
+if(leave_trail){dev.off()}
+
+```
+
+
+And a look at the distribution:
+
+
+```{r distribution}
+
+
+#Distribution
+if(leave_trail){
+png(filename="distribution.png", width=wanted_width+50, height=wanted_height-50)
+}
+
+tem_df %>% 
+  
+  pivot_longer(cols = c("Unvaccinated", "Vaccinated")) %>% 
+  
+  mutate(value = as.integer(value)) %>% 
+  
+  ggplot(aes(x = value, fill = name )) +
+  
+  geom_density(alpha = 0.7) + 
+  
+  theme_fivethirtyeight() + 
+  
+  labs(title = "Distribution of Daily Number of Patients per Group", 
+       x = "Daily Count of Patients", 
+       y = "Frequency") + 
+  
+  scale_fill_discrete(name = "",type = c("#f24b3f", "#4c92f5") ) 
+
+if(leave_trail){dev.off()}
+
+```
+
