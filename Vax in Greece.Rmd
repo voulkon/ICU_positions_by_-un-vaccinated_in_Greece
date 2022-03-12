@@ -30,7 +30,7 @@ library(pdftools)
 library(ggthemes)
 library(lubridate)
 
-Sys.setlocale("LC_ALL","English")
+Sys.setlocale("LC_ALL","Greek")
 
 
 #Global Variables######
@@ -241,18 +241,22 @@ tem_df %>% head()
 
 ## Absolute Numbers & Percentages
 
-Now that we have fetched and cleaned our data, we can plot:
+Now that we have fetched and cleaned our data, we can plot.
+
+First, let's take a look at the absolute numbers in ICUs.
 
 
 ```{r absolute numbers, echo=FALSE}
+
+#Now change the locale so that plots can be read in English too
+invisible(Sys.setlocale("LC_ALL","English"))
 
 
 unvaccinated_color <- "#a78ccf" #"#ed8282" #"#e07e7e"
 vaccinated_color <- "#69c28b"
 
 
-
-if(FALSE){
+if(leave_trail){
   png(filename="Absolute_Numbers_in_ICUs.png", 
       width=wanted_width, 
       height=wanted_height)
@@ -285,7 +289,7 @@ day_of_maximum_number_of_vaccinated <-
 
 absolutes_plot <- in_long_format %>% 
   
-  ggplot(aes(x = Day, y = value, fill = name )) +
+  ggplot(aes(x = Day, y = value, fill = name)) +
   
   geom_col(position = "stack",width = .5) + 
   
@@ -302,8 +306,6 @@ absolutes_plot <- in_long_format %>%
   theme_fivethirtyeight() + 
   
   theme(axis.text.x = element_text(angle = 45, hjust = 1) , legend.title = element_blank() ) +
-  
-  theme(legend.position = "none") + 
           
   labs(title = "Number of COVID Patients", subtitle =  "In Intensive Care Units in Greece", y = "Number of Patients", x = "") + 
   
@@ -311,18 +313,20 @@ absolutes_plot <- in_long_format %>%
              
              y = maximum_number_of_vaccinated+60, 
              
-             label = maximum_number_of_vaccinated)
-
-  
-  #scale_fill_discrete(name = "",type = c("#f24b3f", "#4c92f5") ) 
+             label = maximum_number_of_vaccinated,show.legend = FALSE)
 
 
-if(FALSE){dev.off()}
+if(leave_trail){dev.off()}else{absolutes_plot}
 
 
-#
 
-#```{r relative numbers }
+```
+
+By naked eye, it appears that around 2/3 of the total patients are unvaccinated.
+
+And one with Relative.
+
+```{r relative numbers }
 
 #And one with percentages
 
@@ -378,24 +382,17 @@ percentages_plot <-
   
   scale_fill_manual(values = c(unvaccinated_color , vaccinated_color) ) +
 
-  #theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-
   geom_hline(yintercept = maximum_percentage_of_vaccinated, color = "red") +
-  
-  #scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%d %b %y") +
-  
+
   theme_fivethirtyeight() + 
     
   theme(axis.text.x = element_blank(), 
-        legend.title = element_blank(),
-        legend.text = element_text(size=20)) +
-  
-  
+        legend.title = element_blank()) +
   
   scale_y_continuous( breaks = percentage_breaks ,labels = paste0(percentage_breaks,"%") ) +
+
+  scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%d %b %y") +
   
-  #theme(axis.text.x = element_text(angle = 45, hjust = 1) , legend.title = element_blank() ) +
-          
   labs(title = "Percentages of COVID Patients", subtitle = "In Intensive Care Units in Greece", y = "%", x = "") + 
   
   geom_label(x = day_of_maximum_percentage, 
@@ -405,15 +402,15 @@ percentages_plot <-
              label = paste0(maximum_percentage_of_vaccinated,"%"), show.legend = FALSE )
 
 
-gridExtra::grid.arrange( percentages_plot , absolutes_plot)
-
-
-if(leave_trail){dev.off()}
+if(leave_trail){dev.off()}else{percentages_plot}
 
 ```
 
+## Distribution of Populations
 
-And a look at the distribution:
+
+
+By taking a look at the distributions of the numbers exhibited each day, we examine their numbers regardless of the days they occurred.
 
 
 ```{r distribution}
@@ -439,10 +436,18 @@ tem_df %>%
   labs(title = "Distribution of Daily Number of Patients per Group", 
        x = "Daily Count of Patients", 
        y = "Frequency") + 
-  
-  scale_fill_discrete(name = "",type = c("#f24b3f", "#4c92f5") ) 
 
+  scale_fill_manual(values = c(unvaccinated_color , vaccinated_color) )
+  
 if(leave_trail){dev.off()}
 
 ```
 
+The numbers "scored" by the two groups make their distinction so blatant.
+
+The highest numbers recorded by the vaccinated are even lower than the lowest of unvaccinated.
+
+
+# Conlusion
+
+Even though this current report is not a piece of extensive research and cannot directly suggest probabilities of ICU hospitalization, it provides a strong indication that vaccination contributes in avoiding the congestion of Intensive Care Units.
